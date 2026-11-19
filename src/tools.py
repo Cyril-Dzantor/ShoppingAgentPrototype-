@@ -1,4 +1,4 @@
-"""LangChain tools for the shopping agent: product search and order placement."""
+"""LangChain tools for the shopping agent: product search and order placement in Ghana."""
 
 import sqlite3
 from typing import Optional
@@ -31,15 +31,15 @@ def search_products(
             (e.g. "honey", "almond", "coffee"). Do not include words like "organic" here.
         category: Exact category. One of: honey, oil, nuts, seeds, grains, tea, coffee,
             snacks, dairy-alt.
-        max_price: Maximum price in USD (inclusive).
-        min_price: Minimum price in USD (inclusive).
+        max_price: Maximum price in Ghanaian Cedi (GHS / GH₵), inclusive.
+        min_price: Minimum price in Ghanaian Cedi (GHS / GH₵), inclusive.
         organic_only: True to return only organic products.
         min_rating: Minimum average customer rating (0-5), inclusive.
 
     Returns products sorted by rating (highest first), each with id, name, category,
-    price, description, is_organic, average_rating and review_count.
+    price, currency, description, is_organic, average_rating and review_count.
     """
-    sql = "SELECT id, name, category, price, description, is_organic FROM products WHERE 1=1"
+    sql = "SELECT id, name, category, price, currency, description, is_organic FROM products WHERE 1=1"
     params: list = []
     if keyword:
         sql += " AND (name LIKE ? OR category LIKE ?)"
@@ -78,12 +78,14 @@ def place_order(product_id: int) -> dict:
     """Place an order for one product by its product id. Only call this when the user
     has clearly asked to buy/order a specific product."""
     with _connect() as conn:
-        row = conn.execute("SELECT id, name, price FROM products WHERE id = ?", (product_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, name, price, currency FROM products WHERE id = ?", (product_id,)
+        ).fetchone()
         if row is None:
             return {"success": False, "error": f"No product with id {product_id}"}
         cur = conn.execute(
-            "INSERT INTO orders (product_id, product_name, price) VALUES (?, ?, ?)",
-            (row["id"], row["name"], row["price"]),
+            "INSERT INTO orders (product_id, product_name, price, currency) VALUES (?, ?, ?, ?)",
+            (row["id"], row["name"], row["price"], row["currency"]),
         )
         order = conn.execute("SELECT * FROM orders WHERE id = ?", (cur.lastrowid,)).fetchone()
     return {"success": True, "order": dict(order)}
