@@ -1,6 +1,6 @@
 # AI Shopping Agent
 
-Chat to search a grocery catalog ("find me organic honey under $20 with 4.5+ rating") and place orders. Built with LangChain, Streamlit, and `openai/gpt-oss-120b` on GroqCloud.
+Chat to search a grocery catalog ("find me organic honey under GH₵ 200 with 4.5+ rating") and place orders. Built with LangChain, Streamlit, and `openai/gpt-oss-120b` on GroqCloud. Denominated in Ghanaian Cedi (GH₵ / GHS).
 
 ## Run
 
