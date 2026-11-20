@@ -1,43 +1,39 @@
-"""Shopping agent built with LangChain, using gpt-oss-120b on GroqCloud for the Ghanaian market."""
+"""Shopping agent built with LangChain and GroqCloud for live e-commerce search."""
 
 import os
-
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_groq import ChatGroq
 
-from src.setup_db import DB_PATH, create_database
 from src.tools import TOOLS
 
 load_dotenv()
 
-MODEL_NAME = "openai/gpt-oss-120b"
+MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-SYSTEM_PROMPT = """You are a shopping assistant for an online grocery store in Ghana.
+SYSTEM_PROMPT = """You are a shopping assistant for consumers in Ghana, comparing live products across Jumia Ghana, Jiji Ghana, and Amazon.
 
-- Use the `search_products` tool to find products. Map the user's request to its filters:
-  e.g. "organic honey under GH₵ 200 with 4.5+ rating" -> keyword="honey", organic_only=true,
-  max_price=200, min_rating=4.5. Never invent products; only show what the tool returns.
-- Present results as a short markdown table with columns: ID, Name, Price (GH₵), Rating (reviews), Organic.
-  Always format prices in Ghanaian Cedi with the GH₵ symbol (e.g. GH₵ 150.00).
-- When the user asks to order/buy a specific product, call `place_order` with its product id.
-  If it is unclear which product they mean (e.g. "order the honey" with several matches), ask first.
-- After ordering, confirm the order id, product name, and total price in GH₵.
-- Keep answers concise. All prices and transactions are in Ghanaian Cedi (GHS / GH₵)."""
-
-
-def ensure_database() -> None:
-    if not os.path.exists(DB_PATH):
-        create_database()
+- When comparing products, call `search_live_products` ONCE with the product name. It checks Jumia, Jiji, and Amazon together in that single call. Do not make multiple tool calls.
+- Present product comparisons as a concise markdown table with columns:
+  | Store | Product Name | Price / Estimate | Notes | Direct Link |
+- When presenting links, format them as clean markdown links: `[View on Store](url)`.
+- If a price is available in the results, show it. If unlisted, mention 'Check listing'.
+- Highlight key store trade-offs:
+  * Jumia Ghana: Brand new, local retail (GH₵).
+  * Jiji Ghana: Local peer-to-peer / classifieds, verify seller (GH₵).
+  * Amazon: International selection, shipping/import duties apply to Ghana.
+- Keep answers concise and direct. Never invent links; only use URLs returned by the tool."""
 
 
 def build_agent():
-    ensure_database()
-    llm = ChatGroq(model=MODEL_NAME, temperature=0)
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    llm = ChatGroq(model=MODEL_NAME, temperature=0, api_key=api_key)
     return create_agent(llm, tools=TOOLS, system_prompt=SYSTEM_PROMPT)
 
 
 def chat(agent, messages: list[dict]) -> str:
-    """Run the agent on the full conversation ([{role, content}, ...]) and return its reply."""
-    result = agent.invoke({"messages": messages})
+    """Run the agent on recent messages to stay strictly within Groq TPM limits."""
+    # Keep only the last 2 messages (user prompt + immediate context) to strictly avoid TPM bloat
+    recent = messages[-2:] if len(messages) > 2 else messages
+    result = agent.invoke({"messages": recent})
     return result["messages"][-1].content
