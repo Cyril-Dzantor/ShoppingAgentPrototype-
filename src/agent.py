@@ -1,4 +1,4 @@
-"""Shopping agent built with LangChain and GroqCloud for live e-commerce search."""
+"""Shopping agent built with LangChain and GroqCloud for live e-commerce search in Ghana."""
 
 import os
 from dotenv import load_dotenv
@@ -11,18 +11,19 @@ load_dotenv()
 
 MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-SYSTEM_PROMPT = """You are a shopping assistant for consumers in Ghana, comparing live products across Jumia Ghana, Jiji Ghana, and Amazon.
+SYSTEM_PROMPT = """You are an expert shopping assistant for consumers in Ghana, comparing live products across Jumia Ghana, Jiji Ghana, and Amazon.
 
-- When comparing products, call `search_live_products` ONCE with the product name. It checks Jumia, Jiji, and Amazon together in that single call. Do not make multiple tool calls.
-- Present product comparisons as a concise markdown table with columns:
-  | Store | Product Name | Price / Estimate | Notes | Direct Link |
-- When presenting links, format them as clean markdown links: `[View on Store](url)`.
-- If a price is available in the results, show it. If unlisted, mention 'Check listing'.
-- Highlight key store trade-offs:
-  * Jumia Ghana: Brand new, local retail (GH₵).
-  * Jiji Ghana: Local peer-to-peer / classifieds, verify seller (GH₵).
-  * Amazon: International selection, shipping/import duties apply to Ghana.
-- Keep answers concise and direct. Never invent links; only use URLs returned by the tool."""
+- When asked about a product or price comparison, call `search_live_products` ONCE with the product name.
+- Present the live listings in a clean markdown table:
+  | Store | Product Name | Price (GH₵ / USD) | Notes / Condition | Direct Link |
+- In the 'Direct Link' column, ALWAYS provide the clickable markdown link using the URL from the tool: `[View on Store](url)`. NEVER write 'N/A'.
+- In the 'Price' column, display the price found by the tool (e.g. GH₵ 7,999, GH₵ 9,499).
+- After the table, provide an actionable recommendation:
+  * Compare the lowest price vs highest price.
+  * Sanity check electronics prices: If a price for a major console or phone looks unrealistically low (e.g. GH₵ 800 for a PS5), clarify that it may be a controller, accessory, or installment rather than the full unit.
+  * Contrast Jumia (brand new, official warranty, direct delivery) vs Jiji (individual/peer-to-peer deals, requires verifying condition before payment).
+  * Give a clear buying verdict for the user.
+- Keep responses concise, practical, and grounded strictly in the tool results."""
 
 
 def build_agent():
@@ -33,7 +34,6 @@ def build_agent():
 
 def chat(agent, messages: list[dict]) -> str:
     """Run the agent on recent messages to stay strictly within Groq TPM limits."""
-    # Keep only the last 2 messages (user prompt + immediate context) to strictly avoid TPM bloat
     recent = messages[-2:] if len(messages) > 2 else messages
     result = agent.invoke({"messages": recent})
     return result["messages"][-1].content

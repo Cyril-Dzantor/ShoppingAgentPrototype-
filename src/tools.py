@@ -6,26 +6,16 @@ from src.search_service import execute_google_search
 
 
 @tool
-def search_live_products(query: str, store: Optional[str] = None) -> list[dict]:
-    """Search live product listings across Jumia Ghana, Jiji Ghana, and Amazon in one call.
+def search_live_products(query: str, include_amazon: bool = False) -> list[dict]:
+    """Search live products across Ghanaian stores (Jumia Ghana, Jiji Ghana) and optionally Amazon.
 
     Args:
-        query: Product name to search for (e.g. 'PS5 Slim', 'iPhone 13 128GB', 'air fryer').
-        store: Optional store name to filter by ('jumia', 'jiji', or 'amazon').
+        query: Product or item name (e.g. 'PS5 Slim', 'air fryer 5L', 'iPhone 13 128GB').
+        include_amazon: Set to True if user explicitly requests international Amazon pricing.
 
-    Returns a concise list of matching products with store, title, price, and direct link.
+    Returns a clean list of product listings with store, title, extracted price, notes, and direct URL.
     """
-    clean_query = query.strip()
-    if store:
-        s = store.lower()
-        if "jumia" in s:
-            clean_query += " site:jumia.com.gh"
-        elif "jiji" in s:
-            clean_query += " site:jiji.com.gh"
-        elif "amazon" in s:
-            clean_query += " site:amazon.com"
-
-    return execute_google_search(clean_query)
+    return execute_google_search(query, include_amazon=include_amazon)
 
 
 TOOLS = [search_live_products]
