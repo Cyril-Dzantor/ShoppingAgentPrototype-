@@ -83,7 +83,7 @@ def _clean_product_query(raw_query: str) -> str:
 
 
 async def _async_get_jiji_listings(client: httpx.AsyncClient, product_name: str, limit: int = 2) -> List[Dict[str, Any]]:
-    """Query Jiji Ghana's public catalog API asynchronously."""
+    """Query Jiji Ghana's public catalog API asynchronously with rich metadata."""
     url = f"https://jiji.com.gh/api_web/v1/listing?query={urllib.parse.quote(product_name)}&page=1"
     items = []
     try:
@@ -95,10 +95,26 @@ async def _async_get_jiji_listings(client: httpx.AsyncClient, product_name: str,
                 price = ad.get("price_title") or "Contact for price"
                 clean_url = "https://jiji.com.gh" + ad.get("url", "").split("?")[0]
                 region = ad.get("region_name", "Ghana")
+                parent_region = ad.get("region_parent_name", "")
+                location = f"{region}, {parent_region}" if parent_region and parent_region != region else region
+
+                condition = "Used"
+                for attr in ad.get("attrs", []):
+                    if attr.get("name") == "Condition":
+                        condition = attr.get("value", "Used")
+                        break
+
+                image_url = ad.get("image_obj", {}).get("url")
+                if not image_url and ad.get("images"):
+                    image_url = ad.get("images")[0].get("url")
+
                 items.append({
                     "store": "Jiji Ghana",
                     "title": ad.get("title", "").strip()[:65],
                     "price": price,
+                    "condition": condition,
+                    "location": location,
+                    "image": image_url,
                     "link": clean_url,
                     "notes": f"{region} - Verified listing"[:50],
                 })
@@ -110,13 +126,13 @@ async def _async_get_jiji_listings(client: httpx.AsyncClient, product_name: str,
 
 
 async def _async_get_jumia_listings(client: httpx.AsyncClient, product_name: str, api_key: str, limit: int = 2) -> List[Dict[str, Any]]:
-    """Query Jumia Ghana listings via Google/Serper asynchronously with price extraction."""
+    """Query Jumia Ghana listings via Google/Serper asynchronously with price and image extraction."""
     if not api_key:
         return []
 
     items = []
     try:
-        resp = await client.post(
+        web_task = client.post(
             "https://google.serper.dev/search",
             json={
                 "q": f"site:jumia.com.gh {product_name} price GH₵",
@@ -127,9 +143,28 @@ async def _async_get_jumia_listings(client: httpx.AsyncClient, product_name: str
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
             timeout=5.0,
         )
-        if resp.status_code == 200:
-            data = resp.json()
-            for it in data.get("organic", [])[:limit]:
+        img_task = client.post(
+            "https://google.serper.dev/images",
+            json={
+                "q": f"site:jumia.com.gh {product_name}",
+                "gl": "gh",
+                "num": 4,
+            },
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            timeout=5.0,
+        )
+        web_resp, img_resp = await asyncio.gather(web_task, img_task, return_exceptions=True)
+
+        images = []
+        if isinstance(img_resp, httpx.Response) and img_resp.status_code == 200:
+            try:
+                images = [im.get("imageUrl") for im in img_resp.json().get("images", []) if im.get("imageUrl")]
+            except Exception:
+                pass
+
+        if isinstance(web_resp, httpx.Response) and web_resp.status_code == 200:
+            data = web_resp.json()
+            for idx, it in enumerate(data.get("organic", [])[:limit]):
                 snippet = f"{it.get('snippet', '')} {it.get('title', '')}"
                 match = re.search(r'(?:GH[₵S]|GHS)\s*[\d\s,]+(?:\.\d{2})?', snippet, re.IGNORECASE)
                 price = match.group(0).strip() if match else it.get("price") or "Check catalog"
@@ -138,15 +173,20 @@ async def _async_get_jumia_listings(client: httpx.AsyncClient, product_name: str
                 if "google.com/goto" in link or not link.startswith("http"):
                     link = f"https://www.jumia.com.gh/catalog/?q={urllib.parse.quote(product_name)}"
 
+                image_url = images[idx] if idx < len(images) else None
+
                 items.append({
                     "store": "Jumia Ghana",
                     "title": it.get("title", "").strip()[:65],
                     "price": price,
+                    "condition": "Brand New",
+                    "location": "Nationwide Delivery",
+                    "image": image_url,
                     "link": link,
                     "notes": it.get("snippet", "").strip()[:60],
                 })
         else:
-            print(f"[Jumia Search Warning] Serper HTTP {resp.status_code}")
+            print(f"[Jumia Search Warning] Serper returned unexpected response: {web_resp}")
     except Exception as e:
         print(f"[Jumia Search Error] Gracefully handling: {e}")
 
@@ -156,6 +196,9 @@ async def _async_get_jumia_listings(client: httpx.AsyncClient, product_name: str
             "store": "Jumia Ghana",
             "title": f"{product_name} on Jumia Ghana",
             "price": "Check catalog",
+            "condition": "Brand New",
+            "location": "Nationwide Delivery",
+            "image": None,
             "link": f"https://www.jumia.com.gh/catalog/?q={urllib.parse.quote(product_name)}",
             "notes": "Official store search link",
         })
@@ -190,6 +233,9 @@ async def _async_get_amazon_listings(client: httpx.AsyncClient, product_name: st
                     "store": "Amazon",
                     "title": it.get("title", "").strip()[:65],
                     "price": price,
+                    "condition": "Brand New",
+                    "location": "Ships to Ghana",
+                    "image": None,
                     "link": it.get("link", f"https://www.amazon.com/s?k={urllib.parse.quote(product_name)}"),
                     "notes": "International shipping to Ghana",
                 })

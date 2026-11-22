@@ -6,15 +6,17 @@
   - If any store API or Serper times out or encounters network restrictions, the remaining stores return seamlessly without crashing.
   - Robust thread-safe synchronous bridging (`_run_coroutine_safely`) ensures compatibility with LangChain tools and Streamlit.
 
-2. UI / UX: Interactive Cards (Beyond Plain Text Tables):
-Rich Product Cards in Streamlit:
-Image thumbnails (both Jiji and Jumia return image URLs in their payloads).
-Clear visual badges: Brand New vs. Used / Negotiable.
-Verified location pills: Accra, Kumasi, Spintex.
-Sidebar Filter Controls:
-Allow users to filter the live search without retyping:
-Condition toggle: All | Brand New Only | Second-hand Deals
-Store toggles: [x] Jumia [x] Jiji [ ] Amazon
+2. UI / UX: Interactive Cards (Beyond Plain Text Tables) [COMPLETED]:
+- Clean Product Cards in Streamlit:
+  - Real product image thumbnails extracted from Jiji's direct CDN and Jumia's product image pipeline.
+  - High-utility, distraction-free card design with zero AI artifacts (no emoji icons, no color gradients, no neon borders, no glassmorphism).
+  - Clear solid status tags: Store identity, Condition (Brand New vs. Second-hand Deals), and Location (Spintex, Madina, Nationwide Delivery).
+  - Direct outbound "View on Store" action buttons for every listing.
+- Real-Time Sidebar Filter Controls:
+  - Multi-store selection: Jumia Ghana, Jiji Ghana, and Amazon.
+  - Condition toggle: All Conditions | Brand New Only | Second-hand Deals.
+  - Price sorting: Store Default | Price: Low to High | Price: High to Low.
+  - Instant client-side filtering without re-querying the LLM or external search APIs.
 
 3. Infrastructure, Observability & Rate Limiting:
 User Authentication & Per-User Rate Limiting:
