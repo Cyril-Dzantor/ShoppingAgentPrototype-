@@ -34,3 +34,5 @@ resources/*.db
 
 # Streamlit local state
 .streamlit/secrets.toml
+
+updates.md
