@@ -1,19 +1,20 @@
 """
 Multi-store search service for Ghanaian e-commerce.
-Combines Jiji Ghana's live catalog API with Google/Serper search for Jumia Ghana and Amazon.
+Uses asynchronous parallel fetching (httpx + asyncio) across Jiji Ghana, Jumia Ghana, and Amazon.
 """
 
+import asyncio
+import concurrent.futures
 import hashlib
 import json
 import os
 import re
 import sqlite3
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
+import httpx
 
 load_dotenv()
 
@@ -81,20 +82,14 @@ def _clean_product_query(raw_query: str) -> str:
     return clean if len(clean) >= 2 else raw_query.strip()
 
 
-def _get_jiji_listings(product_name: str, limit: int = 2) -> List[Dict[str, Any]]:
-    """Query Jiji Ghana's public catalog API for exact prices, locations, and direct URLs."""
+async def _async_get_jiji_listings(client: httpx.AsyncClient, product_name: str, limit: int = 2) -> List[Dict[str, Any]]:
+    """Query Jiji Ghana's public catalog API asynchronously."""
     url = f"https://jiji.com.gh/api_web/v1/listing?query={urllib.parse.quote(product_name)}&page=1"
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            "Accept": "application/json",
-        },
-    )
     items = []
     try:
-        with urllib.request.urlopen(req, timeout=7) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        resp = await client.get(url, timeout=5.0)
+        if resp.status_code == 200:
+            data = resp.json()
             adverts = data.get("adverts_list", {}).get("adverts", [])[:limit]
             for ad in adverts:
                 price = ad.get("price_title") or "Contact for price"
@@ -107,30 +102,33 @@ def _get_jiji_listings(product_name: str, limit: int = 2) -> List[Dict[str, Any]
                     "link": clean_url,
                     "notes": f"{region} - Verified listing"[:50],
                 })
+        else:
+            print(f"[Jiji API Warning] HTTP {resp.status_code}")
     except Exception as e:
-        print(f"[Jiji API Error] {e}")
+        print(f"[Jiji API Error] Gracefully handling: {e}")
     return items
 
 
-def _get_jumia_listings(product_name: str, api_key: str, limit: int = 2) -> List[Dict[str, Any]]:
-    """Query Jumia Ghana listings via Google/Serper with price regex extraction."""
+async def _async_get_jumia_listings(client: httpx.AsyncClient, product_name: str, api_key: str, limit: int = 2) -> List[Dict[str, Any]]:
+    """Query Jumia Ghana listings via Google/Serper asynchronously with price extraction."""
     if not api_key:
         return []
 
-    req = urllib.request.Request(
-        "https://google.serper.dev/search",
-        data=json.dumps({
-            "q": f"site:jumia.com.gh {product_name} price GH₵",
-            "gl": "gh",
-            "hl": "en",
-            "num": 4,
-        }).encode("utf-8"),
-        headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-    )
     items = []
     try:
-        with urllib.request.urlopen(req, timeout=7) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        resp = await client.post(
+            "https://google.serper.dev/search",
+            json={
+                "q": f"site:jumia.com.gh {product_name} price GH₵",
+                "gl": "gh",
+                "hl": "en",
+                "num": 4,
+            },
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            timeout=5.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
             for it in data.get("organic", [])[:limit]:
                 snippet = f"{it.get('snippet', '')} {it.get('title', '')}"
                 match = re.search(r'(?:GH[₵S]|GHS)\s*[\d\s,]+(?:\.\d{2})?', snippet, re.IGNORECASE)
@@ -147,10 +145,12 @@ def _get_jumia_listings(product_name: str, api_key: str, limit: int = 2) -> List
                     "link": link,
                     "notes": it.get("snippet", "").strip()[:60],
                 })
+        else:
+            print(f"[Jumia Search Warning] Serper HTTP {resp.status_code}")
     except Exception as e:
-        print(f"[Jumia Search Error] {e}")
+        print(f"[Jumia Search Error] Gracefully handling: {e}")
 
-    # If no specific Jumia product found, provide direct verified catalog search link
+    # Fallback to direct Jumia search catalog link if no individual item matched
     if not items:
         items.append({
             "store": "Jumia Ghana",
@@ -162,25 +162,26 @@ def _get_jumia_listings(product_name: str, api_key: str, limit: int = 2) -> List
     return items
 
 
-def _get_amazon_listings(product_name: str, api_key: str, limit: int = 2) -> List[Dict[str, Any]]:
-    """Query Amazon listings via Google/Serper if explicitly requested."""
+async def _async_get_amazon_listings(client: httpx.AsyncClient, product_name: str, api_key: str, limit: int = 1) -> List[Dict[str, Any]]:
+    """Query Amazon listings via Google/Serper asynchronously if requested."""
     if not api_key:
         return []
 
-    req = urllib.request.Request(
-        "https://google.serper.dev/search",
-        data=json.dumps({
-            "q": f"site:amazon.com {product_name}",
-            "gl": "us",
-            "hl": "en",
-            "num": 4,
-        }).encode("utf-8"),
-        headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-    )
     items = []
     try:
-        with urllib.request.urlopen(req, timeout=7) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        resp = await client.post(
+            "https://google.serper.dev/search",
+            json={
+                "q": f"site:amazon.com {product_name}",
+                "gl": "us",
+                "hl": "en",
+                "num": 4,
+            },
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            timeout=5.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
             for it in data.get("organic", [])[:limit]:
                 snippet = f"{it.get('snippet', '')} {it.get('title', '')}"
                 match_usd = re.search(r'\$\s*[\d,]+(?:\.\d{2})?', snippet)
@@ -193,12 +194,12 @@ def _get_amazon_listings(product_name: str, api_key: str, limit: int = 2) -> Lis
                     "notes": "International shipping to Ghana",
                 })
     except Exception as e:
-        print(f"[Amazon Search Error] {e}")
+        print(f"[Amazon Search Error] Gracefully handling: {e}")
     return items
 
 
-def execute_google_search(raw_query: str, include_amazon: bool = False) -> List[Dict[str, Any]]:
-    """Unified search: queries Jiji Ghana directly + Jumia Ghana + Amazon, returning verified prices & links."""
+async def async_execute_search(raw_query: str, include_amazon: bool = False) -> List[Dict[str, Any]]:
+    """Execute multi-store search asynchronously in parallel with graceful degradation."""
     product_name = _clean_product_query(raw_query)
 
     cached = _get_cached_results(product_name)
@@ -207,20 +208,46 @@ def execute_google_search(raw_query: str, include_amazon: bool = False) -> List[
 
     api_key = os.getenv("SERPER_API_KEY", "").strip()
 
-    # 1. Fetch live Jiji listings with real prices & direct links
-    jiji_results = _get_jiji_listings(product_name, limit=2)
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
+        follow_redirects=True,
+    ) as client:
+        # Build parallel tasks
+        tasks = [
+            _async_get_jiji_listings(client, product_name, limit=2),
+            _async_get_jumia_listings(client, product_name, api_key, limit=2),
+        ]
+        if include_amazon or "amazon" in raw_query.lower():
+            tasks.append(_async_get_amazon_listings(client, product_name, api_key, limit=1))
 
-    # 2. Fetch live Jumia listings
-    jumia_results = _get_jumia_listings(product_name, api_key, limit=2)
+        # Run all store searches in parallel; return_exceptions=True ensures one failure never crashes others
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # 3. Optional Amazon listings
-    amazon_results = []
-    if include_amazon or "amazon" in raw_query.lower():
-        amazon_results = _get_amazon_listings(product_name, api_key, limit=1)
-
-    combined = jiji_results + jumia_results + amazon_results
+    combined: List[Dict[str, Any]] = []
+    for r in results:
+        if isinstance(r, list):
+            combined.extend(r)
+        elif isinstance(r, Exception):
+            print(f"[Parallel Search Warning] Task encountered error: {r}")
 
     if combined:
         _save_cached_results(product_name, combined)
 
     return combined
+
+
+def _run_coroutine_safely(coro):
+    """Safely execute an async coroutine from synchronous code, even inside existing event loops."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    # If called from a thread where an event loop is already active, dispatch to dedicated thread pool
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def execute_google_search(raw_query: str, include_amazon: bool = False) -> List[Dict[str, Any]]:
+    """Synchronous entry point that runs async parallel search under the hood."""
+    return _run_coroutine_safely(async_execute_search(raw_query, include_amazon=include_amazon))

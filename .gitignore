@@ -9,6 +9,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.ruff_cache/
+
+# Package builds & distribution
+dist/
+build/
+*.egg-info/
 
 # Environment variables & secrets
 .env
@@ -20,11 +26,13 @@ __pycache__/
 *.sqlite
 *.sqlite3
 resources/*.db
+!resources/.gitkeep
 
-# macOS system files
+# macOS & OS system files
 .DS_Store
 .AppleDouble
 .LSOverride
+Thumbs.db
 
 # IDEs & editors
 .vscode/
@@ -34,5 +42,3 @@ resources/*.db
 
 # Streamlit local state
 .streamlit/secrets.toml
-
-updates.md
