@@ -129,6 +129,15 @@ def render_product_card(item: dict):
             notes = item.get("notes", "")
             st.caption(f"Location: {location} • {notes}")
 
+            if item.get("is_anomaly") and item.get("anomaly_warning"):
+                st.markdown(
+                    f'<div style="margin: 6px 0 10px 0; padding: 6px 10px; background-color: #fffbeb; '
+                    f'border: 1px solid #fde68a; border-radius: 4px; font-size: 11px; color: #92400e; line-height: 1.4;">'
+                    f'<strong>PRICE ALERT:</strong> {item["anomaly_warning"]}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
             link = item.get("link")
             if link and str(link).startswith("http"):
                 st.link_button("View on Store", url=link, use_container_width=False)

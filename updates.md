@@ -29,10 +29,14 @@ If Groq hits a momentary 429/413 rate limit or outage, automatically route the t
 LLM Tracing & Telemetry (LangSmith / Langfuse):
 Track user search terms, latency, tool execution failures, and token expenditure in real-time.
 
-4. Accessory & Anomaly Filtering:
-When a user searches for a high-value item (phone, console, laptop), automatically exclude listings whose titles contain accessory words
-
-If an item's price is more than 60% below the median price for that category (e.g. a PS5 for GH₵ 500), flag it with a warning
+4. Accessory & Anomaly Filtering [COMPLETED]:
+- Automatic Accessory Exclusion:
+  - When querying high-value devices (phones, consoles, laptops, tablets), listings with accessory keywords (cases, covers, tempered glass, cables, chargers, skins, stands, controllers) are automatically filtered out unless the user explicitly requested them.
+  - Increased upstream candidate fetching to guarantee high-value core devices are present in top listings.
+- Statistical Price Anomaly Detection:
+  - Computes the median market price across active store listings.
+  - Automatically flags any listing priced >60% below the category median (e.g., a PS5 listed for GH₵ 500 or GH₵ 1,500).
+  - Displays a clear, solid price alert notice on the product card in Streamlit and informs the agent to warn buyers against advance payment or scam listings.
 
 5. Ambiguity Resolution & Guardrails
 
