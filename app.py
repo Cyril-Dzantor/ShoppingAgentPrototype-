@@ -14,6 +14,20 @@ st.set_page_config(
     layout="centered",
 )
 
+# Remove Streamlit default Deploy button and toolbar actions
+st.markdown(
+    """
+    <style>
+    [data-testid="stDeployButton"],
+    .stDeployButton,
+    [data-testid="stToolbarActions"] {
+        display: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 SAMPLE_QUESTIONS = [
     "Compare prices for PS5 Slim across Jumia and Jiji",
     "Find a 43-inch 4K Smart TV under GH₵ 4,000",
